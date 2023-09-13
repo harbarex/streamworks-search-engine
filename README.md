@@ -1,14 +1,8 @@
 # StreamWorks: A fully distributed Search Engine
 
-This project was developed as the final project for the Spring 2022 cohort of CIS-555 at the University of Pennsylvania. 
+This project was developed as the final project for the Spring 2022 cohort of CIS-555 at the University of Pennsylvania, in collaboration with [Chun-Fu Yeh](https://github.com/YehCF), Duy Duc Doan and Daniel Stekol.
 
-## Project members:
-- Duy Duc Doan (ducdoan)
-- Chun-Fu Yeh (cfyeh)
-- Daniel Stekol (dstekol)
-- Ankit Billa (ankitb)
-
-## Description of all features implemented
+## Features
 
 ### Crawler
 Implemented by Daniel Stekol
