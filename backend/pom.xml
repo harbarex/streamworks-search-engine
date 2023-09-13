@@ -1,0 +1,505 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>edu.upenn.cis.cis455</groupId>
+	<artifactId>StreamWork</artifactId>
+	<packaging>jar</packaging>
+	<version>1.0-SNAPSHOT</version>
+	<name>CIS 455 StreamWork</name>
+	<url>http://www.cis.upenn.edu/~cis455</url>
+
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<maven.compiler.source>11</maven.compiler.source>
+		<maven.compiler.target>11</maven.compiler.target>
+		<java.version>11</java.version>
+	</properties>
+
+	<dependencyManagement>
+	<dependencies>
+		<dependency>
+		<groupId>software.amazon.awssdk</groupId>
+		<artifactId>bom</artifactId>
+		<version>2.17.176</version>
+		<type>pom</type>
+		<scope>import</scope>
+		</dependency>
+	</dependencies>
+	</dependencyManagement>
+ 
+	<dependencies>
+		<!-- https://mvnrepository.com/artifact/com.sparkjava/spark-core -->
+		<dependency>
+			<groupId>com.sparkjava</groupId>
+			<artifactId>spark-core</artifactId>
+			<version>2.6.0</version>
+		</dependency>
+
+
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.12</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.mockito/mockito-all -->
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-all</artifactId>
+			<version>1.10.19</version>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- https://mvnrepository.com/artifact/log4j/log4j -->
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-core</artifactId>
+            <version>2.17.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-api</artifactId>
+            <version>2.17.1</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.apache.logging.log4j/log4j-slf4j-impl -->
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-slf4j-impl</artifactId>
+            <version>2.17.1</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/com.sleepycat/je -->
+        <dependency>
+            <groupId>com.sleepycat</groupId>
+            <artifactId>je</artifactId>
+            <version>18.3.12</version>
+        </dependency>
+		<!-- <dependency>
+			<groupId>com.sleepycat</groupId>
+			<artifactId>je</artifactId>
+			<version>5.0.73</version>
+		</dependency> -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.dataformat</groupId>
+			<artifactId>jackson-dataformat-yaml</artifactId>
+			<version>2.9.1</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/net.sf.jtidy/jtidy -->
+		<dependency>
+			<groupId>net.sf.jtidy</groupId>
+			<artifactId>jtidy</artifactId>
+			<version>r938</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.jsoup/jsoup -->
+		<dependency>
+			<groupId>org.jsoup</groupId>
+			<artifactId>jsoup</artifactId>
+			<version>1.10.3</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-lang3 -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-lang3</artifactId>
+			<version>3.6</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-core -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-core</artifactId>
+			<version>2.9.1</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-core -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<version>2.9.1</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-core -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-annotations</artifactId>
+			<version>2.9.1</version>
+		</dependency>
+		<!-- AWS https://docs.aws.amazon.com/redshift/latest/mgmt/configure-jdbc20-connection-with-maven.html-->
+		<dependency>
+		<groupId>com.amazon.redshift</groupId>
+		<artifactId>redshift-jdbc42</artifactId>
+		<version>2.1.0.1</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.amazonaws</groupId>
+			<artifactId>aws-java-sdk-core</artifactId>
+			<version>1.12.23</version>
+			<optional>true</optional>
+		</dependency>
+		
+			<dependency>
+			<groupId>com.amazonaws</groupId>
+			<artifactId>aws-java-sdk-redshift</artifactId>
+			<version>1.12.23</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>  
+			<groupId>com.amazonaws</groupId>  
+			<artifactId>aws-java-sdk</artifactId>  
+			<version>1.11.18</version>  
+		</dependency>
+		<dependency>
+			<groupId>com.amazonaws</groupId>
+			<artifactId>aws-java-sdk-sts</artifactId>
+			<version>1.12.23</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>com.amazonaws</groupId>
+			<artifactId>aws-java-sdk-core</artifactId>
+			<!-- <version>1.11.15</version> -->
+			<version>1.12.203</version>
+		</dependency>
+		<dependency>
+			<groupId>mysql</groupId>
+			<artifactId>mysql-connector-java</artifactId>
+			<version>8.0.25</version>
+		</dependency>
+		
+		<dependency>
+		<groupId>com.oracle.database.jdbc</groupId>
+		<artifactId>ojdbc8</artifactId>
+		<version>19.3.0.0</version>
+		</dependency>
+
+		<!-- Stanford CoreNLP Dependencies -->
+		<dependency>
+			<groupId>edu.stanford.nlp</groupId>
+			<artifactId>stanford-corenlp</artifactId>
+			<version>4.4.0</version>
+		</dependency>
+		<dependency>
+			<groupId>edu.stanford.nlp</groupId>
+			<artifactId>stanford-corenlp</artifactId>
+			<version>4.4.0</version>
+			<classifier>models</classifier>
+		</dependency>
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>javax.servlet-api</artifactId>
+			<version>3.1.0</version>
+		</dependency>
+		
+		<!-- Apache Storm -->
+		<dependency>
+		  <groupId>org.apache.storm</groupId>
+		  <artifactId>storm-client</artifactId>
+		  <version>2.4.0</version>
+		  <scope>provided</scope>
+		</dependency>
+		
+		<!-- Crawler Commons (for robots.txt processing -->
+		<dependency>
+		    <groupId>com.github.crawler-commons</groupId>
+		    <artifactId>crawler-commons</artifactId>
+		    <version>1.2</version>
+		</dependency>
+		
+		<!-- AWS SQS SDK -->
+		<!-- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk-sqs -->
+		<dependency>
+		    <groupId>com.amazonaws</groupId>
+		    <artifactId>aws-java-sdk-sqs</artifactId>
+		    <version>1.12.23</version>
+		</dependency>
+	    
+	    <!-- https://mvnrepository.com/artifact/org.json/json -->
+		<dependency>
+		    <groupId>org.json</groupId>
+		    <artifactId>json</artifactId>
+		    <version>20220320</version>
+		</dependency>
+		
+		<!-- Google Guava -->
+		<dependency>
+		    <groupId>com.google.guava</groupId>
+		    <artifactId>guava</artifactId>
+		    <version>31.0.1-jre</version>
+		</dependency>
+		
+		<!-- SQS Temporary queues -->
+		<dependency>
+		    <groupId>com.amazonaws</groupId>
+		    <artifactId>amazon-sqs-java-temporary-queues-client</artifactId>
+		    <version>2.0.0</version>
+		    <type>jar</type>
+	    </dependency>
+		
+		<!-- https://mvnrepository.com/artifact/software.amazon.awssdk/dynamodb -->
+		<dependency>
+		    <groupId>software.amazon.awssdk</groupId>
+		    <artifactId>dynamodb</artifactId>
+		    <version>2.17.176</version>
+		</dependency>
+
+
+		<!-- https://mvnrepository.com/artifact/software.amazon.awssdk/dynamodb-enhanced -->
+		<dependency>
+		    <groupId>software.amazon.awssdk</groupId>
+		    <artifactId>dynamodb-enhanced</artifactId>
+		    <version>2.17.176</version>
+		</dependency>
+
+	    
+
+
+		<!-- JWT library -->
+		<dependency>
+			<groupId>com.auth0</groupId>
+			<artifactId>java-jwt</artifactId>                                                                                                                 
+			<version>3.3.0</version> 
+		</dependency>
+		<dependency>
+			<groupId>io.github.cdimascio</groupId>
+			<artifactId>dotenv-java</artifactId>
+			<version>2.2.3</version>
+		</dependency>
+
+		<!-- AWS SDK-->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>ec2</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>dynamodb</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>dynamodb-enhanced</artifactId>
+		</dependency>	 
+
+
+	</dependencies>
+
+	<!-- AWS-->
+	<repositories>
+		<repository>
+		<id>redshift</id>
+		<url>http://redshift-maven-repository.s3-website-us-east-1.amazonaws.com/release</url>
+		</repository>
+	</repositories>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>2.4</version>
+				<configuration>
+					<archive>
+						<manifest>
+							<addClasspath>true</addClasspath>
+							<classpathPrefix>lib/</classpathPrefix>
+							<mainClass>engine.[SearchEngine]</mainClass>
+						</manifest>
+					</archive>
+				</configuration>
+			</plugin>
+			<plugin>
+
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>1.6.0</version>
+				<executions>
+
+					<execution>
+						<id>engine</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+					</execution>
+
+					<execution>
+						<id>crawler</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>crawler.CrawlMaster</mainClass>
+						</configuration>
+					</execution>
+					
+					<execution>
+						<id>crawlerstats</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>crawler.PrintCrawlStats</mainClass>
+						</configuration>
+					</execution>
+					
+					<execution>
+						<id>crawlerupload</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>crawler.UploadCrawl</mainClass>
+						</configuration>
+					</execution>
+					
+					
+					<execution>
+						<id>crawlerpurge</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>crawler.PurgeQueues</mainClass>
+							<arguments>
+								<argument>10</argument>
+							</arguments>
+						</configuration>
+					</execution>
+
+					<execution>
+						<id>indexer</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>indexer.IndexServer</mainClass>
+							<arguments>
+								<argument>44455</argument>
+								<argument>./indexStorage/demo/lexicon</argument>
+								<argument>./indexStorage/demo</argument>
+								<argument>true</argument>
+							</arguments>
+						</configuration>
+					</execution>
+
+					<execution>
+						<id>pagerank</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>pagerank.PageRank</mainClass>
+							<arguments>
+								<argument>44454</argument>
+							</arguments>
+						</configuration>
+					</execution>
+
+					<!--For Indexer MapReduce Jobs & Sync Scheduler-->
+					<execution>
+						<id>indexMaster</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>edu.upenn.cis455.mapreduce.master.IndexerMasterServer</mainClass>
+							<arguments>
+								<argument>40001</argument>
+								<argument>./index/demo</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					
+					<execution>
+						<id>indexWorker</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>edu.upenn.cis455.mapreduce.worker.WorkerServer</mainClass>
+							<arguments>
+								<argument>8001</argument>
+								<argument>192.168.64.29:40001</argument>
+								<argument>./node/node1</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					
+
+					<execution>
+						<id>getDocs</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>edu.upenn.cis455.mapreduce.scheduler.DocumentTaskScheduler</mainClass>
+						</configuration>
+					</execution>
+
+					<execution>
+						<id>parseDocs</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>edu.upenn.cis455.mapreduce.scheduler.DocInfoParseScheduler</mainClass>
+						</configuration>
+					</execution>
+
+					<execution>
+						<id>syncIndex</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>edu.upenn.cis455.mapreduce.scheduler.IndexSynchronizer</mainClass>
+						</configuration>
+					</execution>
+
+					<execution>
+						<id>showIndex</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>edu.upenn.cis455.mapreduce.worker.storage.IndexStorage</mainClass>
+						</configuration>
+					</execution>
+
+					<execution>
+						<id>showHit</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>edu.upenn.cis455.mapreduce.worker.storage.HitStorage</mainClass>
+							<arguments>
+							<argument>./index/demo/hit0</argument>
+							</arguments>
+						</configuration>
+					</execution>
+
+					<execution>
+						<id>hitNode</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>indexer.HitServer</mainClass>
+							<arguments>
+								<argument>44456</argument>
+								<argument>./indexStorage/demo</argument>
+							</arguments>
+						</configuration>
+					</execution>
+ 
+				</executions>
+				<configuration>
+					<mainClass>engine.SearchEngine</mainClass>
+				</configuration>
+
+			</plugin>
+		</plugins>
+	</build>
+</project>

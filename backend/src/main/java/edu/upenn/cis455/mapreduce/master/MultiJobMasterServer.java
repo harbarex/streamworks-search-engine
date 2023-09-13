@@ -1,0 +1,922 @@
+package edu.upenn.cis455.mapreduce.master;
+
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import static spark.Spark.*;
+
+import spark.HaltException;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import edu.upenn.cis.stormlite.Config;
+import edu.upenn.cis.stormlite.Topology;
+import edu.upenn.cis.stormlite.TopologyBuilder;
+import edu.upenn.cis.stormlite.bolt.MapBolt;
+import edu.upenn.cis.stormlite.bolt.PrintBolt;
+import edu.upenn.cis.stormlite.bolt.ReduceBolt;
+import edu.upenn.cis.stormlite.distributed.WorkerHelper;
+import edu.upenn.cis.stormlite.distributed.WorkerJob;
+import edu.upenn.cis.stormlite.spout.ShardedFileSpout;
+import edu.upenn.cis.stormlite.tuple.Fields;
+
+public class MultiJobMasterServer {
+
+    static Logger log = LogManager.getLogger(MultiJobMasterServer.class);
+
+    /**
+     * Stored worker info (retrieved from /workerstatus)
+     */
+    public static LinkedHashMap<String, WorkerInfo> workers = new LinkedHashMap<String, WorkerInfo>();
+
+    /**
+     * Extended for multiple job submission
+     */
+    private static ArrayList<WorkerJob> jobsToSubmit = new ArrayList<WorkerJob>();
+
+    private static LinkedHashMap<String, WorkerJob> activeJobs = new LinkedHashMap<String, WorkerJob>();
+    private static LinkedHashMap<String, JobInfo> completedJobs = new LinkedHashMap<String, JobInfo>();
+
+    /**
+     * Transform a set of workers into a predefined string.
+     * Note: Get the active workers.
+     * 
+     * @return [String]
+     */
+    public static String getWorkerList() {
+
+        StringBuilder builder = new StringBuilder();
+
+        // null if it is empty worker set
+        synchronized (workers) {
+
+            if (workers.size() == 0) {
+
+                return null;
+
+            }
+
+            // start build the workerlist
+            builder.append("[");
+
+            List<String> workerlist = new ArrayList<String>(workers.keySet());
+
+            int activeWorkers = 0;
+
+            for (String worker : workerlist) {
+
+                // check active or not
+                WorkerInfo info = workers.get(worker);
+
+                if (!info.isActive()) {
+
+                    // not active
+                    continue;
+
+                }
+
+                activeWorkers += 1;
+
+                builder.append(worker);
+
+                builder.append(",");
+
+            }
+
+            // remove last "," & add "]"
+            if (activeWorkers > 0) {
+
+                builder.setLength(builder.length() - 1);
+
+            }
+
+            builder.append("]");
+
+        }
+
+        return builder.toString();
+    }
+
+    /**
+     * For Multiple Jobs.
+     */
+    private static String renderUnsubmittedJobs() {
+
+        StringBuilder builder = new StringBuilder();
+
+        // [index] Name: , ClassName: , Input, Output, Map, Reduce
+        for (int i = 0; i < jobsToSubmit.size(); i++) {
+
+            Config config = jobsToSubmit.get(i).getConfig();
+
+            builder.append("[" + (i + 1) + "] Name: "
+                    + config.get("job")
+                    + " , Job: " + config.get("classname")
+                    + " , Input: " + config.get("input")
+                    + " , Output: " + config.get("output")
+                    + " , Map (n): " + config.get("mapExecutors")
+                    + " , Reduce (n):" + config.get("reduceExecutors") + "</br>");
+
+        }
+
+        return builder.toString();
+
+    }
+
+    private static String renderActiveJobs() {
+
+        StringBuilder builder = new StringBuilder();
+
+        // [index] Name: , ClassName: , Input, Output, Map, Reduce
+        synchronized (activeJobs) {
+
+            int i = 0;
+
+            for (WorkerJob job : activeJobs.values()) {
+
+                Config config = job.getConfig();
+                builder.append("[" + (i + 1) + "] "
+                        + "ID: " + config.get("jobID")
+                        + " , Name: " + config.get("job")
+                        + " , Job: " + config.get("classname")
+                        + " , Input: " + config.get("input")
+                        + " , Output: " + config.get("output")
+                        + " , Map (n): " + config.get("mapExecutors")
+                        + " , Reduce (n):" + config.get("reduceExecutors") + "</br>");
+
+                i++;
+            }
+
+        }
+
+        return builder.toString();
+
+    }
+
+    private static String renderCompletedJobs() {
+
+        StringBuilder builder = new StringBuilder();
+
+        // [index] Name: , ClassName: , Input, Output, Map, Reduce
+        synchronized (completedJobs) {
+
+            int i = 0;
+
+            for (JobInfo job : completedJobs.values()) {
+
+                if (job.jobIsDone()) {
+
+                    Config config = job.getConfig();
+
+                    builder.append("[" + (i + 1) + "] "
+                            + "ID: " + config.get("jobID")
+                            + " , Name: " + config.get("job")
+                            + " , Job: " + config.get("classname")
+                            + " , Input: " + config.get("input")
+                            + " , Output: " + config.get("output") + "</br>");
+                    i++;
+
+                }
+            }
+
+        }
+
+        return builder.toString();
+
+    }
+
+    /**
+     * Register the /status page.
+     */
+    public static void registerStatusPage() {
+
+        get("/status", (request, response) -> {
+
+            response.type("text/html");
+
+            // get active worker
+            String workerStatus = getActiveWorkersInfo();
+
+            String form = "<h4>Add a Job</h4>"
+                    + "<form method=\"POST\" action=\"/addjob\"> "
+                    + "Job Name: <input type=\"text\" name=\"jobname\"/><br/> "
+                    + "Class Name: <input type=\"text\" name=\"classname\"/><br/> "
+                    + "Input Directory: <input type=\"text\" name=\"input\"/><br/> "
+                    + "Output Directory: <input type=\"text\" name=\"output\"/><br/> "
+                    + "Map Threads: <input type=\"text\" name=\"map\"/><br/> "
+                    + "Reduce Threads: <input type=\"text\" name=\"reduce\"/><br/> "
+                    + "<input type=\"submit\" value=\"Add\"/>"
+                    + "</form>";
+
+            return ("<html><head><title>Master</title></head>\n" +
+                    "<body>Hi, I am Chun-Fu Yeh (cfyeh)!"
+                    + "<br/>"
+                    + "<br/>"
+                    + "<h3>Active Workers</h3>"
+                    + "<hr>"
+                    + "<div>" + workerStatus
+                    + "</div>"
+                    + "<br/>"
+                    + "<div>"
+                    + "<h3>Active Jobs</h3>"
+                    + "<hr>"
+                    + renderActiveJobs()
+                    + "<h3>Completed Jobs</h3>"
+                    + "<hr>"
+                    + renderCompletedJobs()
+                    + "</div>"
+                    + "<div>"
+                    + "<br/>"
+                    + form
+                    + "<form method=\"POST\" action=\"/loadexample\">"
+                    + "<input type=\"submit\" value=\"load example\"/>"
+                    + "</form>"
+                    + "<h4>---- Jobs to submit ----</h4>"
+                    + renderUnsubmittedJobs()
+                    + "<br/>"
+                    + "<form method=\"POST\" action=\"/submitjobs\">"
+                    + "<input type=\"submit\" value=\"Submit\"/>"
+                    + "</form>"
+                    + "</div>"
+                    + "</body></html>");
+
+        });
+
+    }
+
+    public static void registerLoadExampleJobs() {
+
+        post("/loadexample", (req, res) -> {
+
+            // example 1
+            ArrayList<HashMap<String, String>> examples = new ArrayList<HashMap<String, String>>();
+
+            examples.add(new HashMap<String, String>() {
+                {
+                    put("jobname", "mjtest01");
+                    put("classname", "edu.upenn.cis455.mapreduce.job.WordCount");
+                    put("input", "mjinput01");
+                    put("output", "mjout01");
+                    put("map", "4");
+                    put("reduce", "2");
+                }
+            });
+
+            examples.add(new HashMap<String, String>() {
+                {
+                    put("jobname", "mjtest02");
+                    put("classname", "edu.upenn.cis455.mapreduce.job.WordCount");
+                    put("input", "mjinput02");
+                    put("output", "mjout02");
+                    put("map", "2");
+                    put("reduce", "2");
+                }
+            });
+
+            examples.add(new HashMap<String, String>() {
+                {
+                    put("jobname", "mjtest03");
+                    put("classname", "edu.upenn.cis455.mapreduce.job.WordCount");
+                    put("input", "mjinput03");
+                    put("output", "mjout03");
+                    put("map", "1");
+                    put("reduce", "1");
+                }
+            });
+
+            for (HashMap<String, String> param : examples) {
+
+                Config config = generateConfig(param);
+
+                WorkerJob job = buildWorkerJob(config);
+
+                jobsToSubmit.add(job);
+
+            }
+
+            // redirect to status page
+            res.redirect("/status");
+
+            return "load examples";
+
+        });
+
+    }
+
+    /**
+     * Register POST route : /addjob
+     */
+    public static void registerAddJob() {
+
+        post("/addjob", (req, res) -> {
+
+            ArrayList<String> targetParams = new ArrayList<String>() {
+                {
+                    add("jobname");
+                    add("classname");
+                    add("input");
+                    add("output");
+                    add("map");
+                    add("reduce");
+                }
+            };
+
+            HashMap<String, String> paramsMap = new HashMap<String, String>();
+
+            // check exist or not
+            for (String param : targetParams) {
+
+                String value = req.queryParamOrDefault(param, null);
+
+                if (value == null) {
+
+                    // error message
+                    halt(400, "No value found for the key: " + param + " ! Please check!");
+
+                }
+
+                paramsMap.put(param, value);
+
+            }
+
+            Config config = generateConfig(paramsMap);
+
+            // get instance of a worker job
+            WorkerJob job = buildWorkerJob(config);
+
+            // add job to list
+            jobsToSubmit.add(job);
+
+            // // send to worker's /definejob
+            // postJobToWorkers(job, config);
+
+            // redirect to status page
+            res.redirect("/status");
+
+            return "Successfully add a job!";
+
+        });
+
+    }
+
+    /**
+     * Register POST route : /submitjob
+     */
+    public static void registerSubmitJobs() {
+
+        post("/submitjobs", (req, res) -> {
+
+            synchronized (activeJobs) {
+
+                // clean jobsToSubmit => put it to active
+                for (WorkerJob job : jobsToSubmit) {
+
+                    postJobToWorkers(job, job.getConfig());
+
+                    activeJobs.put(job.getConfig().get("jobID"), job);
+
+                    // also put a jobinfo in completedJobs
+                    completedJobs.put(job.getConfig().get("jobID"), new JobInfo(job.getConfig()));
+
+                    try {
+
+                        // try keep the same order in each worker
+                        Thread.sleep(100);
+
+                    } catch (InterruptedException e) {
+
+                        e.printStackTrace();
+
+                    }
+
+                }
+
+                jobsToSubmit.clear();
+
+                // redirect to status page
+                res.redirect("/status");
+            }
+
+            return "Successfully add a job!";
+
+        });
+
+    }
+
+    /**
+     * Helper method to generate config based on the user's query params.
+     * 
+     * @param paramsMap : [<String, String>].
+     *                  must include
+     *                  'jobname', 'classname',
+     *                  'input', 'output',
+     *                  'map', 'reduce',
+     * @return
+     */
+    public static Config generateConfig(HashMap<String, String> paramsMap) {
+
+        // create job config
+        Config config = new Config();
+
+        // add an UUID as an unique Job ID
+        String jobID = UUID.randomUUID().toString();
+
+        config.put("jobID", jobID);
+
+        config.put("workerList", getWorkerList());
+
+        config.put("job", paramsMap.get("jobname"));
+
+        // add class name for convenience
+        config.put("classname", paramsMap.get("classname"));
+
+        config.put("mapClass", paramsMap.get("classname"));
+        config.put("reduceClass", paramsMap.get("classname"));
+        config.put("mapExecutors", paramsMap.get("map"));
+        config.put("reduceExecutors", paramsMap.get("reduce"));
+
+        config.put("input", paramsMap.get("input"));
+        config.put("output", paramsMap.get("output"));
+
+        config.put("spoutExecutors", "1"); // default to 1
+        config.put("printerExecutors", "1"); // default to 1
+
+        return config;
+
+    }
+
+    /**
+     * Build the topology and subsequently create worker job.
+     * 
+     * @param config : [<String, String>]
+     * @return [WorkerJob]
+     */
+    public static WorkerJob buildWorkerJob(Config config) {
+
+        String wordSpout = "WORD_SPOUT";
+        String wordMapper = "WORD_MAP";
+        String wordReducer = "WORD_REDUCE";
+        String wordPrinter = "WORD_PRINTER";
+
+        ShardedFileSpout spout = new ShardedFileSpout();
+        MapBolt mapBolt = new MapBolt();
+        ReduceBolt reduceBolt = new ReduceBolt();
+        PrintBolt printerBolt = new PrintBolt();
+
+        TopologyBuilder builder = new TopologyBuilder();
+
+        try {
+
+            builder.setSpout(wordSpout, spout,
+                    Integer.parseInt(config.get("spoutExecutors")));
+
+            builder.setBolt(wordMapper, mapBolt,
+                    Integer.parseInt(config.get("mapExecutors"))).fieldsGrouping(wordSpout, new Fields("key"));
+
+            builder.setBolt(wordReducer, reduceBolt,
+                    Integer.parseInt(config.get("reduceExecutors"))).fieldsGrouping(wordMapper, new Fields("key"));
+
+            builder.setBolt(wordPrinter, printerBolt,
+                    Integer.parseInt(config.get("printerExecutors"))).firstGrouping(wordReducer);
+
+        }
+
+        catch (NumberFormatException e) {
+
+            e.printStackTrace();
+            halt(400, "Number Format Problem : number of executors for Map & reduce should be an integer!");
+
+        }
+
+        Topology topo = builder.createTopology();
+
+        WorkerJob job = new WorkerJob(topo, config);
+
+        return job;
+
+    }
+
+    /**
+     * Post the job to worker's /definejob
+     * 
+     * @param job    : [WorkerJob]
+     * @param config : [Config]
+     */
+    public static void postJobToWorkers(WorkerJob job, Config config) {
+
+        ObjectMapper mapper = new ObjectMapper();
+
+        mapper.enableDefaultTyping(ObjectMapper.DefaultTyping.NON_FINAL);
+
+        try {
+
+            String[] existingWorkers = WorkerHelper.getWorkers(config);
+
+            int i = 0;
+
+            for (String dest : existingWorkers) {
+
+                config.put("workerIndex", String.valueOf(i++));
+
+                if (sendJob(dest, "POST", config, "definejob",
+                        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(job))
+                        .getResponseCode() != HttpURLConnection.HTTP_OK) {
+
+                    throw new RuntimeException("Job definition request failed");
+
+                }
+            }
+
+            try {
+
+                // try make some time for workers to set up
+                log.debug("(Master) wait for 500 ms to have the workers set up!");
+                Thread.sleep(300);
+
+            } catch (InterruptedException e) {
+
+                e.printStackTrace();
+
+            }
+
+            for (String dest : existingWorkers) {
+
+                if (sendJob(dest, "POST", config, "runjob", "").getResponseCode() != HttpURLConnection.HTTP_OK) {
+
+                    throw new RuntimeException("Job execution request failed");
+
+                }
+
+            }
+
+        } catch (IOException e) {
+
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            // System.exit(0);
+
+        }
+
+    }
+
+    static HttpURLConnection sendJob(String dest, String reqType, Config config, String job, String parameters)
+            throws IOException {
+        URL url = new URL(dest + "/" + job);
+
+        log.info("Sending request to " + url.toString());
+
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setDoOutput(true);
+        conn.setRequestMethod(reqType);
+
+        if (reqType.equals("POST")) {
+            conn.setRequestProperty("Content-Type", "application/json");
+
+            OutputStream os = conn.getOutputStream();
+            byte[] toSend = parameters.getBytes();
+            os.write(toSend);
+            os.flush();
+        } else
+            conn.getOutputStream();
+
+        return conn;
+    }
+
+    /**
+     * Route for worker to send to periodically. (Route: /workerstatus)
+     */
+    public static void registerWorkerStatus() {
+
+        get("/workerstatus", (req, res) -> {
+
+            // client IP
+            String ip = req.ip();
+
+            // requirements: port, status, job, keysRead, keysWritten, results
+            // get client port from queryParam
+            String portS = req.queryParamOrDefault("port", null);
+
+            if (portS == null) {
+
+                // no port => bad request
+                halt(400, "No port specified in the queryString!");
+
+            }
+
+            int port = Integer.parseInt(portS);
+
+            String query = req.queryString();
+
+            log.debug("Got query: " + query);
+
+            String key = ip + ":" + port;
+
+            // deal with inactive to active mode
+            if (!workers.containsKey(key)) {
+
+                // init
+                workers.put(key, new WorkerInfo(query));
+
+            }
+
+            else if (!workers.get(key).isActive()) {
+
+                // from inactive to active => move to last
+                workers.remove(key);
+
+                // add new one
+                workers.put(key, new WorkerInfo(query));
+
+            }
+
+            // already exist (and in active mode)
+            else {
+
+                WorkerInfo existedInfo = workers.get(key);
+                existedInfo.update(query);
+
+            }
+
+            return "Successfully update a worker status!";
+
+        });
+
+    }
+
+    /**
+     * Gather the info of all active workers to show in status page.
+     * 
+     * @return [String] , html content
+     */
+    public static String getActiveWorkersInfo() {
+
+        StringBuilder builder = new StringBuilder();
+
+        synchronized (workers) {
+
+            List<String> workerlist = new ArrayList<String>(workers.keySet());
+
+            int activeWorkers = 0;
+
+            for (String worker : workerlist) {
+
+                // check active or not
+                WorkerInfo info = workers.get(worker);
+
+                if (!info.isActive()) {
+
+                    // not active
+                    continue;
+
+                }
+
+                // add to status
+                builder.append("" + activeWorkers + ":\t" + info.toString() + "<br/>");
+
+                activeWorkers += 1;
+
+            }
+
+        }
+
+        return builder.toString();
+
+    }
+
+    /**
+     * Added for multiple jobs. /completedjob/:id
+     */
+    public static void registerJobCompleted() {
+
+        get("/completedjob/:id", (req, res) -> {
+
+            // client IP
+            String ip = req.ip();
+
+            // requirements: port, status, job, keysRead, keysWritten, results
+            // get client port from queryParam
+            String portS = req.queryParamOrDefault("port", null);
+
+            if (portS == null) {
+
+                // no port => bad request
+                halt(400, "No port specified in the queryString!");
+
+            }
+
+            int port = Integer.parseInt(portS);
+
+            String key = ip + ":" + port;
+
+            String id = req.params(":id");
+
+            if (id == null) {
+
+                halt(400, "No Job ID (id) found in the query!");
+
+            }
+
+            log.debug("Got job completed: " + id + " from " + key);
+
+            synchronized (completedJobs) {
+
+                if (completedJobs.containsKey(id)) {
+
+                    // get info
+                    completedJobs.get(id).updateEOJ(key);
+
+                    if (completedJobs.get(id).jobIsDone()) {
+
+                        // remove from activeJobs
+                        synchronized (activeJobs) {
+                            activeJobs.remove(id);
+                        }
+
+                    }
+
+                }
+
+            }
+
+            return "Successfully handled a completed job message!";
+
+        });
+    }
+
+    // TODO: Shutdown routes & worker's
+    public static void registerShutdown() {
+
+        get("/shutdown", (req, res) -> {
+
+            // shutdown workers
+            sendShutdownToWorkers();
+
+            // shutdown server
+            try {
+
+                Thread.sleep(1000);
+
+            } catch (InterruptedException e) {
+
+                e.printStackTrace();
+
+            }
+
+            stop();
+
+            return "Successfully shutdown!";
+        });
+
+    }
+
+    public static void sendShutdownToWorkers() {
+
+        synchronized (workers) {
+
+            for (String workerAddress : workers.keySet()) {
+
+                try {
+
+                    URL url = new URL("http://" + workerAddress + "/shutdown");
+
+                    log.debug("Send shutdown to : " + url.toString());
+
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+                    int resp = conn.getResponseCode();
+
+                } catch (IOException e) {
+
+                    e.printStackTrace();
+                }
+
+            }
+        }
+
+    }
+
+    // public static void testLocalSendAndRun() {
+
+    // String wordSpout = "WORD_SPOUT";
+    // String wordMapper = "WORD_MAP";
+    // String wordReducer = "WORD_REDUCE";
+    // String wordPrinter = "WORD_PRINTER";
+
+    // ShardedFileSpout spout = new ShardedFileSpout();
+    // MapBolt mapBolt = new MapBolt();
+    // ReduceBolt reduceBolt = new ReduceBolt();
+    // PrintBolt printerBolt = new PrintBolt();
+
+    // Config config = new Config();
+
+    // config.put("workerList", "[127.0.0.1:8001,127.0.0.1:8008]");
+
+    // // Job name
+    // config.put("job", "test");
+
+    // // Class with map function
+    // config.put("mapClass", "edu.upenn.cis455.mapreduce.job.WordCount");
+    // // Class with reduce function
+    // config.put("reduceClass", "edu.upenn.cis455.mapreduce.job.WordCount");
+
+    // // Numbers of executors (per node)
+    // config.put("spoutExecutors", "1");
+    // config.put("mapExecutors", "2");
+    // config.put("reduceExecutors", "3");
+
+    // TopologyBuilder builder = new TopologyBuilder();
+    // builder.setSpout(wordSpout, spout,
+    // Integer.parseInt(config.get("spoutExecutors")));
+    // builder.setBolt(wordMapper, mapBolt,
+    // Integer.parseInt(config.get("mapExecutors"))).fieldsGrouping(wordSpout,
+    // new Fields("key"));
+    // builder.setBolt(wordReducer, reduceBolt,
+    // Integer.parseInt(config.get("reduceExecutors")))
+    // .fieldsGrouping(wordMapper, new Fields("key"));
+    // builder.setBolt(wordPrinter, printerBolt, 1).firstGrouping(wordReducer);
+
+    // Topology topo = builder.createTopology();
+
+    // WorkerJob job = new WorkerJob(topo, config);
+
+    // ObjectMapper mapper = new ObjectMapper();
+    // mapper.enableDefaultTyping(ObjectMapper.DefaultTyping.NON_FINAL);
+    // try {
+    // String[] workers = WorkerHelper.getWorkers(config);
+
+    // int i = 0;
+    // for (String dest : workers) {
+    // config.put("workerIndex", String.valueOf(i++));
+    // if (sendJob(dest, "POST", config, "definejob",
+    // mapper.writerWithDefaultPrettyPrinter().writeValueAsString(job))
+    // .getResponseCode() != HttpURLConnection.HTTP_OK) {
+    // throw new RuntimeException("Job definition request failed");
+    // }
+    // }
+    // for (String dest : workers) {
+    // if (sendJob(dest, "POST", config, "runjob", "").getResponseCode() !=
+    // HttpURLConnection.HTTP_OK) {
+    // throw new RuntimeException("Job execution request failed");
+    // }
+    // }
+    // } catch (IOException e) {
+    // // TODO Auto-generated catch block
+    // e.printStackTrace();
+    // System.exit(0);
+    // }
+
+    // }
+
+    /**
+     * The mainline for launching a MapReduce Master. This should
+     * handle at least the status and workerstatus routes, and optionally
+     * initialize a worker as well.
+     * 
+     * @param args
+     */
+    public static void main(String[] args) {
+
+        org.apache.logging.log4j.core.config.Configurator.setLevel("edu.upenn", Level.DEBUG);
+
+        if (args.length < 1) {
+            System.out.println("Usage: MultiJobMasterServer [port number]");
+            System.exit(1);
+        }
+
+        int myPort = Integer.valueOf(args[0]);
+        port(myPort);
+
+        System.out.println("Master node startup, on port " + myPort);
+
+        // TODO: you may want to adapt parts of
+        // edu.upenn.cis.stormlite.mapreduce.TestMapReduce here
+        registerStatusPage();
+
+        // TODO: route handler for /workerstatus reports from the workers
+        registerAddJob();
+        registerSubmitJobs();
+        registerWorkerStatus();
+        registerShutdown();
+
+        // added
+        registerJobCompleted();
+        registerLoadExampleJobs();
+
+    }
+}
