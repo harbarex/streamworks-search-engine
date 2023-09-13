@@ -1,4 +1,6 @@
-# CIS 555 Final Project
+# StreamWorks: A fully distributed Search Engine
+
+This project was developed as the final project for the Spring 2022 cohort of CIS-555 at the University of Pennsylvania. 
 
 ## Project members:
 - Duy Duc Doan (ducdoan)
